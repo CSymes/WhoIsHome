@@ -2,6 +2,7 @@
 
 import os
 import json
+import time
 import platform
 import subprocess
 from pushbullet import Pushbullet
@@ -13,12 +14,12 @@ CONFIG_FILE = 'people.ini'
 STATE_FILE = 'status'
 PB_KEY_FILE = 'pushbullet.ini'
 
-STATE_TIMEOUT = 60*60*1000 # time to regard the state over (in ms)
 # if it's older than this, ignore any change in state
+STATE_TIMEOUT = 60*60 # time to regard the state over (in seconds)
 
-TIMEOUT = 2 # Timeout for pinging devices (in seconds)
-CMD_PING_NIX = f'ping -c 1 -w{TIMEOUT}' # ping command on general unix based systems
-CMD_PING_WIN = f'ping -n 1 -w{TIMEOUT * 1000}' # windows variant
+PING_TIMEOUT = 2 # Timeout for pinging devices (in seconds)
+CMD_PING_NIX = f'ping -c 1 -w{PING_TIMEOUT}' # ping command on general unix based systems
+CMD_PING_WIN = f'ping -n 1 -w{PING_TIMEOUT * 1000}' # windows variant
 # the required command
 CMD_PING = CMD_PING_WIN if platform.system().lower() == 'windows' else CMD_PING_NIX
 
@@ -59,18 +60,30 @@ def main():
 		except json.JSONDecodeError:
 			last_state = {}
 
-		# compare each person's current connection status to their last-known
-		for person in results:
-			if person in last_state: # check they have a last-seen status
-				# Check if connected since last poll
-				if results[person] > last_state[person]:
-					report_conn(person)
-				# check if disconnected since last poll
-				elif results[person] < last_state[person]:
-					report_dc(person)
+		# get current time
+		cur_time = time.time()
+		results[TIME_INDEX] = cur_time
+		# get time we last checked status
+		if (TIME_INDEX in last_state):
+			last_time = last_state[TIME_INDEX]
+		else:
+			last_time = 0
+
+		# only proceed if the state is considered valid
+		if (cur_time < last_time + STATE_TIMEOUT):
+			# compare each person's current connection status to their last-known
+			for person in results:
+				if person in last_state: # check they have a last-seen status
+					# Check if connected since last poll
+					if results[person] > last_state[person]:
+						report_conn(person)
+					# check if disconnected since last poll
+					elif results[person] < last_state[person]:
+						report_dc(person)
 
 
 
+	# save current state back to disk
 	with open(STATE_FILE, 'w') as state_file:
 		json.dump(results, state_file)
 
