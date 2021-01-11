@@ -4,12 +4,14 @@ import os
 import json
 import platform
 import subprocess
-import configparser
+from pushbullet import Pushbullet
+from configparser import ConfigParser
 
 
 
 CONFIG_FILE = 'people.ini'
 STATE_FILE = 'status'
+PB_KEY_FILE = 'PUSHBULLET_KEY'
 
 STATE_TIMEOUT = 60*60*1000 # time to regard the state over (in ms)
 # if it's older than this, ignore any change in state
@@ -20,11 +22,19 @@ CMD_PING_WIN = f'ping -n 1 -w{TIMEOUT * 1000}' # windows variant
 # the required command
 CMD_PING = CMD_PING_WIN if platform.system().lower() == 'windows' else CMD_PING_NIX
 
+# Attempt to load a Pushbullet API key and initialise the API interface
+pushbullet = None
+with open(PB_KEY_FILE) as pb_file:
+	PB_KEY = pb_file.read()
+
+	if PB_KEY:
+		pushbullet = Pushbullet(PB_KEY)
+
 
 
 def main():
 	# Read the hostname or IPs from the config file
-	config = configparser.ConfigParser()
+	config = ConfigParser()
 	config.optionxform = str # preserve case on the names
 
 	with open(CONFIG_FILE) as conf_file:
@@ -40,7 +50,6 @@ def main():
 
 		print(person, '—', result)
 		results[person] = result
-
 
 
 	# compare results to the last known statuses
@@ -67,13 +76,13 @@ def main():
 		json.dump(results, state_file)
 
 
+# Send a Pushbullet notification that someone has arrived
 def report_conn(name):
-	print(name, 'connected to the network')
-	pass
+	if pushbullet:
+		pushbullet.push_note('Home Arrival', f'{name} has connected to the network')
 
 # I don't personally care about people disconnecting at this point
 def report_dc(name):
-	print(name, 'disconnected from the network')
 	pass
 
 
