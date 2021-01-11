@@ -11,7 +11,7 @@ from configparser import ConfigParser
 
 CONFIG_FILE = 'people.ini'
 STATE_FILE = 'status'
-PB_KEY_FILE = 'PUSHBULLET_KEY'
+PB_KEY_FILE = 'pushbullet.ini'
 
 STATE_TIMEOUT = 60*60*1000 # time to regard the state over (in ms)
 # if it's older than this, ignore any change in state
@@ -25,10 +25,9 @@ CMD_PING = CMD_PING_WIN if platform.system().lower() == 'windows' else CMD_PING_
 # Attempt to load a Pushbullet API key and initialise the API interface
 pushbullet = None
 with open(PB_KEY_FILE) as pb_file:
-	PB_KEY = pb_file.read()
-
-	if PB_KEY:
-		pushbullet = Pushbullet(PB_KEY)
+	pb_ini = ConfigParser()
+	pb_ini.read_file(pb_file)
+	pushbullet = Pushbullet(pb_ini['API']['key'])
 
 
 
@@ -88,3 +87,8 @@ def report_dc(name):
 
 if __name__ == '__main__':
 	main()
+
+
+### TODO
+# State timeout
+# Scheduling / main loop in memory?
