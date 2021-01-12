@@ -14,7 +14,8 @@ PB_KEY_FILE = 'pushbullet.ini'
 
 # if it's older than this, ignore any change in state
 STATE_TIMEOUT = 5*60 # time to regard the state over (in seconds)
-POLL_PERIOD = 5 # time to wait between device polls (in seconds)
+POLL_PERIOD = 10 # time to wait between device polls (in seconds)
+DC_GRACE_PERIOD = 60 # time to wait after a disconnect before notifying on reconnect
 
 PING_TIMEOUT = 2 # Timeout for pinging devices (in seconds)
 CMD_PING_NIX = f'ping -c 1 -w{PING_TIMEOUT}' # ping command on general unix based systems
@@ -41,11 +42,20 @@ def main():
 		config.read_file(conf_file)
 	people = config['People']
 
-	last_state = {}
+	print(f'Starting monitoring with a poll interval of {POLL_PERIOD}s and debounce period of {DC_GRACE_PERIOD}s')
+	print(f'Pushbullet is {"" if pushbullet else "un"}available')
+
+	last_seen = {}
+	legal_status = {} # latched status
 	last_time = 0
 
 	try:
+		first_run = True # run some first-time map inits
+
 		while True:
+
+			# get current time
+			cur_time = int(time.time())
 
 			results = {}
 			# Attempt to ping each person's device
@@ -55,32 +65,40 @@ def main():
 				# print(person, '—', result)
 				results[person] = result
 
+				if first_run:
+					legal_status[person] = result
+					last_seen[person] = cur_time if result else 0
 
-			# get current time
-			cur_time = time.time()
+			first_run = False # don't init other times around the loop
+
 
 			# only proceed if the state is considered valid
 			if (cur_time < last_time + STATE_TIMEOUT):
 				# compare each person's current connection status to their last-known
 				for person in results:
-					if person in last_state: # check they have a last-seen status
-						# Check if connected since last poll
-						if results[person] > last_state[person]:
-							report_conn(person)
-						# check if disconnected since last poll
-						elif results[person] < last_state[person]:
-							report_dc(person)
+					# check if we've exceeded the disconnect grace period
+					past_grace = cur_time > (last_seen[person] + DC_GRACE_PERIOD)
+
+					# Check if connected since last poll
+					if results[person] and past_grace:
+						report_conn(person)
+						legal_status[person] = True
+
+					# check if disconnected since last poll
+					elif not results[person] and past_grace and legal_status[person]:
+						report_dc(person)
+						legal_status[person] = False
 
 			# set state for next run
-			last_state = results
+			for (k, v) in results.items():
+				if v:
+					last_seen[k] = cur_time
 			last_time = cur_time
 
 			# sleep
 			time.sleep(POLL_PERIOD)
 	except KeyboardInterrupt:
-		# TODO save state to disk on exit / load on start
-		print(last_time)
-		print(last_state)
+		print(last_seen)
 		return
 
 
@@ -88,14 +106,21 @@ def main():
 
 # Send a Pushbullet notification that someone has arrived
 def report_conn(name):
-	print(name, 'has connected to the network')
+	print(int(time.time()), name, 'has connected to the network')
 	if pushbullet:
 		pushbullet.push_note('Home Arrival', f'{name} has connected to the network')
 
 # I don't personally care about people disconnecting at this point
 def report_dc(name):
-	print(name, 'has disconnected from the network')
+	print(int(time.time()), name, 'has disconnected from the network')
 
 
 if __name__ == '__main__':
 	main()
+
+
+
+### TODO
+# save state to disk on exit / load on start
+# minimum number of polls to wait before marking person as away (debounce)
+# configurable to restrict notifications to only when you are at home
